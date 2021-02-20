@@ -9,22 +9,24 @@
 // 3. Graph is the main returned data structure. Diff could be envisaged for D3. Custom nannou impl
 //    might not need it.
 
+use serde::Serialize;
+
 use std::collections::HashSet;
 use std::hash::Hash;
 
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Debug, Eq, Hash, PartialEq, Serialize)]
 struct Vertex<T> {
     id: T,
 }
 
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Debug, Eq, Hash, PartialEq, Serialize)]
 struct Edge<T> {
     source: T,
     target: T,
 }
 
-#[derive(Debug)]
-struct Graph<T> {
+#[derive(Debug, Serialize)]
+struct Graph<T: Hash + Eq> {
     vertices: HashSet<Vertex<T>>,
     edges: HashSet<Edge<T>>,
 }
@@ -74,6 +76,7 @@ mod tests {
 
     use pea2pea::{connect_nodes, NodeConfig, Topology};
     use pea2pea::{Node, Pea2Pea};
+
     use std::net::SocketAddr;
 
     const N: usize = 5;
@@ -122,9 +125,15 @@ mod tests {
             nodes.push(Node::new(Some(config.clone())).await.unwrap());
         }
 
-        let nodes: Vec<JustANode> = nodes.into_iter().map(JustANode).collect();
+        let mut nodes: Vec<JustANode> = nodes.into_iter().map(JustANode).collect();
 
         connect_nodes(&nodes, Topology::Ring).await.unwrap();
+        dbg!(JustANode::graph(&nodes));
+
+        nodes.pop().unwrap().shut_down();
+
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
         dbg!(JustANode::graph(&nodes));
     }
 }

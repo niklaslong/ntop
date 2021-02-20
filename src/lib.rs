@@ -9,10 +9,8 @@
 // 3. Graph is the main returned data structure. Diff could be envisaged for D3. Custom nannou impl
 //    might not need it.
 
-use core::fmt::Debug;
-use pea2pea::{Node, Pea2Pea};
+use std::collections::HashSet;
 use std::hash::Hash;
-use std::{collections::HashSet, net::SocketAddr};
 
 #[derive(Debug, Eq, Hash, PartialEq)]
 struct Vertex<T> {
@@ -70,41 +68,43 @@ trait AsGraph {
     }
 }
 
-struct JustANode(pub Node);
-
-impl Pea2Pea for JustANode {
-    fn node(&self) -> &Node {
-        &self.0
-    }
-}
-
-impl std::ops::Deref for JustANode {
-    type Target = Node;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl AsGraph for JustANode {
-    type Id = SocketAddr;
-
-    fn id(&self) -> Self::Id {
-        self.listening_addr()
-    }
-
-    fn active_connections(&self) -> Vec<Self::Id> {
-        self.known_peers().read().keys().copied().collect()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use pea2pea::{connect_nodes, NodeConfig, Topology};
+    use pea2pea::{Node, Pea2Pea};
+    use std::net::SocketAddr;
 
     const N: usize = 5;
+
+    struct JustANode(pub Node);
+
+    impl Pea2Pea for JustANode {
+        fn node(&self) -> &Node {
+            &self.0
+        }
+    }
+
+    impl std::ops::Deref for JustANode {
+        type Target = Node;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl AsGraph for JustANode {
+        type Id = SocketAddr;
+
+        fn id(&self) -> Self::Id {
+            self.listening_addr()
+        }
+
+        fn active_connections(&self) -> Vec<Self::Id> {
+            self.known_peers().read().keys().copied().collect()
+        }
+    }
 
     #[tokio::test]
     async fn it_works() {

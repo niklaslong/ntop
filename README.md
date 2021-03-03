@@ -1,10 +1,8 @@
-## SnarkOS viz example
+## SnarkOS example
 
 The `AsGraph` trait needs to be implemented on `Node`.
 
 ```rust
-// network/lib.rs
-
 use ntop::AsGraph;
 
 impl AsGraph for Node {

@@ -208,6 +208,10 @@ mod tests {
             self.listening_addr()
         }
 
+        fn is_bootnode(&self) -> bool {
+            false
+        }
+
         fn active_connections(&self) -> Vec<Self::Id> {
             self.connected_addrs()
         }

@@ -14,13 +14,13 @@ use serde::Serialize;
 use std::collections::HashSet;
 use std::hash::Hash;
 
-#[derive(Debug, Eq, Hash, PartialEq, Serialize)]
+#[derive(Debug, Eq, Hash, PartialEq, Serialize, Copy, Clone)]
 struct Vertex<T> {
     id: T,
     is_bootnode: bool,
 }
 
-#[derive(Debug, Eq, Hash, PartialEq, Serialize)]
+#[derive(Debug, Eq, Hash, PartialEq, Serialize, Copy, Clone)]
 struct Edge<T> {
     source: T,
     target: T,
@@ -32,13 +32,64 @@ pub struct Graph<T: Hash + Eq> {
     edges: HashSet<Edge<T>>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct GraphDiff<T> {
+    added_vertices: Vec<Vertex<T>>,
+    removed_vertices: Vec<Vertex<T>>,
+    added_edges: Vec<Edge<T>>,
+    removed_edges: Vec<Edge<T>>,
+}
+
 impl<T: Eq + Hash + Copy> Graph<T> {
+    pub fn new() -> Self {
+        Self {
+            vertices: HashSet::new(),
+            edges: HashSet::new(),
+        }
+    }
+
     pub fn prune_edges(&mut self) {
         let vertice_ids: HashSet<T> = self.vertices.iter().map(|vertice| vertice.id).collect();
 
         self.edges.retain(|edge| {
             vertice_ids.contains(&edge.source) && vertice_ids.contains(&edge.target)
         });
+    }
+
+    fn diff(self: Graph<T>, previous_state: &mut Graph<T>) -> GraphDiff<T> {
+        let current_state = self;
+
+        // Compute the diffs.
+        let removed_vertices: Vec<Vertex<T>> = previous_state
+            .vertices
+            .difference(&current_state.vertices)
+            .copied()
+            .collect();
+        let removed_edges: Vec<Edge<T>> = previous_state
+            .edges
+            .difference(&current_state.edges)
+            .copied()
+            .collect();
+
+        let added_vertices: Vec<Vertex<T>> = current_state
+            .vertices
+            .difference(&previous_state.vertices)
+            .copied()
+            .collect();
+        let added_edges: Vec<Edge<T>> = current_state
+            .edges
+            .difference(&previous_state.edges)
+            .copied()
+            .collect();
+
+        *previous_state = current_state;
+
+        GraphDiff {
+            added_vertices,
+            removed_vertices,
+            added_edges,
+            removed_edges,
+        }
     }
 }
 
@@ -84,6 +135,43 @@ pub trait AsGraph {
 
         Graph { vertices, edges }
     }
+}
+
+use parking_lot::RwLock;
+use std::sync::Arc;
+use tokio::task::JoinHandle;
+
+pub async fn start_rpc_server<T: 'static + AsGraph>(nodes: Arc<RwLock<Vec<T>>>) -> JoinHandle<()>
+where
+    <T as AsGraph>::Id: Eq + Hash + Copy + Serialize + Send + Sync,
+    T: Send + Sync,
+{
+    use ::tokio::task;
+    use jsonrpc_core::*;
+    use jsonrpc_http_server::*;
+    use serde_json::{json, Value};
+
+    let g = Arc::new(RwLock::new(Graph::new()));
+
+    // Listener responds with the current graph every time an RPC call occures.
+    let mut io = IoHandler::new();
+    io.add_sync_method("graph", move |_| {
+        let mut current_state = T::graph(&nodes.read());
+        current_state.prune_edges();
+        let diff = current_state.diff(&mut g.write());
+        Ok(json!(diff))
+    });
+
+    let server = ServerBuilder::new(io)
+        .cors(DomainsValidation::AllowOnly(vec![
+            AccessControlAllowOrigin::Null,
+        ]))
+        .start_http(&"127.0.0.1:3030".parse().unwrap())
+        .expect("Unable to start RPC server");
+
+    task::spawn(async {
+        server.wait();
+    })
 }
 
 #[cfg(test)]

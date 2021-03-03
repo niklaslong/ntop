@@ -17,6 +17,7 @@ use std::hash::Hash;
 #[derive(Debug, Eq, Hash, PartialEq, Serialize)]
 struct Vertex<T> {
     id: T,
+    is_bootnode: bool,
 }
 
 #[derive(Debug, Eq, Hash, PartialEq, Serialize)]
@@ -26,15 +27,27 @@ struct Edge<T> {
 }
 
 #[derive(Debug, Serialize)]
-struct Graph<T: Hash + Eq> {
+pub struct Graph<T: Hash + Eq> {
     vertices: HashSet<Vertex<T>>,
     edges: HashSet<Edge<T>>,
 }
 
-trait AsGraph {
+impl<T: Eq + Hash + Copy> Graph<T> {
+    pub fn prune_edges(&mut self) {
+        let vertice_ids: HashSet<T> = self.vertices.iter().map(|vertice| vertice.id).collect();
+
+        self.edges.retain(|edge| {
+            vertice_ids.contains(&edge.source) && vertice_ids.contains(&edge.target)
+        });
+    }
+}
+
+pub trait AsGraph {
     type Id;
 
     fn id(&self) -> Self::Id;
+
+    fn is_bootnode(&self) -> bool;
 
     fn active_connections(&self) -> Vec<Self::Id>;
 
@@ -51,7 +64,10 @@ trait AsGraph {
 
         for node in nodes {
             let own_addr = node.id();
-            vertices.insert(Vertex { id: own_addr });
+            vertices.insert(Vertex {
+                id: own_addr,
+                is_bootnode: node.is_bootnode(),
+            });
 
             for addr in node.active_connections() {
                 if own_addr != addr
@@ -79,7 +95,7 @@ mod tests {
 
     use std::net::SocketAddr;
 
-    const N: usize = 5;
+    const N: usize = 3;
 
     struct JustANode(pub Node);
 
@@ -105,7 +121,7 @@ mod tests {
         }
 
         fn active_connections(&self) -> Vec<Self::Id> {
-            self.known_peers().read().keys().copied().collect()
+            self.connected_addrs()
         }
     }
 
@@ -128,12 +144,25 @@ mod tests {
         let mut nodes: Vec<JustANode> = nodes.into_iter().map(JustANode).collect();
 
         connect_nodes(&nodes, Topology::Ring).await.unwrap();
-        dbg!(JustANode::graph(&nodes));
+        let mut g = JustANode::graph(&nodes);
+        g.prune_edges();
 
-        nodes.pop().unwrap().shut_down();
+        assert_eq!(g.edges.len(), N);
 
-        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        // Remove the node from the list.
+        let node_to_drop = nodes.pop().unwrap();
+        let dropped_addr = node_to_drop.listening_addr();
+        node_to_drop.shut_down();
 
-        dbg!(JustANode::graph(&nodes));
+        // Disconnect peers from the dropped node.
+        for node in &nodes {
+            node.disconnect(dropped_addr);
+        }
+
+        let mut g = JustANode::graph(&nodes);
+        g.prune_edges();
+
+        // Breaking the ring removes 2 connections.
+        assert_eq!(g.edges.len(), N - 2);
     }
 }

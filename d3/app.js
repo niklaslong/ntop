@@ -46,7 +46,6 @@ function merge_data(data) {
     removed_nodes.forEach(removed_node => {
         const isRemoved = (node) => node.id == removed_node.id;
         var i = nodes.findIndex(isRemoved);
-
         nodes.splice(i, 1);
     });
 
@@ -60,20 +59,12 @@ function merge_data(data) {
     removed_links.forEach(removed_link => {
         const isRemoved = (link) => link.source.id == removed_link.source && link.target.id == removed_link.target;
         var i = links.findIndex(isRemoved);
-        console.log(i);
-        console.log(links[i]);
-        console.log(links.splice(i, 1));
+        links.splice(i, 1);
     });
 
     added_links.forEach(added_link => {
         links.push(added_link)
     });
-
-    // console.log(JSON.stringify(links));
-
-    // console.log(nodes);
-    // links = data["result"]["edges"];
-    // nodes = data["result"]["vertices"];
 }
 
 function update_graph() {

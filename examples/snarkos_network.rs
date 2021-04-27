@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use ntop::AsGraph;
+use parking_lot::Mutex;
 use parking_lot::RwLock;
 use serde::Deserialize;
 
@@ -100,68 +101,77 @@ async fn update_nodes(nodes: Arc<RwLock<Vec<Node>>>) {
     // 2. Update the nodes.
 
     let addrs: HashSet<SocketAddr> = nodes.read().iter().map(|node| node.rpc).collect();
-    for (i, rpc) in addrs.iter().enumerate() {
+    let mut handles = vec![];
+    for (i, rpc) in addrs.clone().into_iter().enumerate() {
+        let addrs_clone = addrs.clone();
+        let nodes_clone = nodes.clone();
         // curl --data-binary '{"jsonrpc": "2.0", "id":"documentation", "method": "getnodeinfo", "params": [] }' -H 'content-type: application/json' http://127.0.0.1:3030/
         // curl --data-binary '{"jsonrpc": "2.0", "id":"documentation", "method": "getpeerinfo", "params": [] }' -H 'content-type: application/json' http://127.0.0.1:3030/
 
-        let mut data_info =
-            r#"{"jsonrpc": "2.0", "id":"documentation", "method": "getnodeinfo", "params": []}"#;
-        let mut data_peers =
-            r#"{"jsonrpc": "2.0", "id":"documentation", "method": "getpeerinfo", "params": []}"#;
+        let handle = tokio::task::spawn(async move {
+            let mut data_info = r#"{"jsonrpc": "2.0", "id":"documentation", "method": "getnodeinfo", "params": []}"#;
+            let mut data_peers = r#"{"jsonrpc": "2.0", "id":"documentation", "method": "getpeerinfo", "params": []}"#;
 
-        let client = reqwest::Client::new();
-        let node_info_res = client
-            .post(format!("http://{}", rpc))
-            .timeout(std::time::Duration::from_secs(1))
-            .body(data_info)
-            .header("content-type", "application/json")
-            .send()
-            .await;
+            let client = reqwest::Client::new();
+            let node_info_res = client
+                .post(format!("http://{}", rpc.clone()))
+                .timeout(std::time::Duration::from_secs(5))
+                .body(data_info)
+                .header("content-type", "application/json")
+                .send()
+                .await;
 
-        let node_info_response = match node_info_res {
-            Err(err) => continue,
-            Ok(res) => res.json::<NodeInfoResponse>().await.unwrap(),
-        };
+            let node_info_response = match node_info_res {
+                Err(err) => return,
+                Ok(res) => res.json::<NodeInfoResponse>().await.unwrap(),
+            };
 
-        dbg!("MADE IT");
+            dbg!("MADE IT");
 
-        let client = reqwest::Client::new();
-        let peer_info_res = client
-            .post(format!("http://{}", rpc))
-            .timeout(std::time::Duration::from_secs(1))
-            .body(data_peers)
-            .header("content-type", "application/json")
-            .send()
-            .await;
+            let client = reqwest::Client::new();
+            let peer_info_res = client
+                .post(format!("http://{}", rpc.clone()))
+                .timeout(std::time::Duration::from_secs(5))
+                .body(data_peers)
+                .header("content-type", "application/json")
+                .send()
+                .await;
 
-        let peer_info_response = match peer_info_res {
-            Err(err) => continue,
-            Ok(res) => res.json::<PeerInfoResponse>().await.unwrap(),
-        };
+            let peer_info_response = match peer_info_res {
+                Err(err) => return,
+                Ok(res) => res.json::<PeerInfoResponse>().await.unwrap(),
+            };
 
-        let node_info = node_info_response.result;
-        let peer_info = peer_info_response.result;
+            let node_info = node_info_response.result;
+            let peer_info = peer_info_response.result;
 
-        // Update node info.
-        let mut nodes_write = nodes.write();
-        nodes_write[i].is_miner = node_info.is_miner;
-        nodes_write[i].is_miner = node_info.is_syncing;
-        nodes_write[i].peers = peer_info.peers.clone();
+            // Update node info.
+            let mut nodes_write = nodes_clone.write();
+            nodes_write[i].is_miner = node_info.is_miner;
+            nodes_write[i].is_miner = node_info.is_syncing;
+            nodes_write[i].peers = peer_info.peers.clone();
 
-        // Create and push new nodes based on the peer addresses.
-        for addr in peer_info.peers {
-            if !addrs.contains(&addr) && addr.port() == 4131 {
-                nodes_write.push(Node {
-                    addr,
-                    rpc: SocketAddr::new(addr.ip(), RPC_PORT),
-                    // Defaults, when nodes are queried in next loop.
-                    peers: vec![],
-                    is_miner: false,
-                    is_syncing: false,
-                })
+            // Create and push new nodes based on the peer addresses.
+            for addr in peer_info.peers {
+                if !addrs_clone.contains(&addr) && addr.port() == 4131 {
+                    nodes_write.push(Node {
+                        addr,
+                        rpc: SocketAddr::new(addr.ip(), RPC_PORT),
+                        // Defaults, when nodes are queried in next loop.
+                        peers: vec![],
+                        is_miner: false,
+                        is_syncing: false,
+                    })
+                }
             }
-        }
 
-        // Write guard is dropped at the end of this scope.
+            drop(nodes_write);
+        });
+
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.await;
     }
 }

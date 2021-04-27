@@ -2,7 +2,7 @@ var svg = d3.select("svg"),
     width = +svg.attr("width"),
     height = +svg.attr("height");
 
-svg.append("rect")
+var rect = svg.append("rect")
     .attr("width", "100%")
     .attr("height", "100%")
     .attr("fill", "black");
@@ -22,6 +22,21 @@ var node = svg.append("g")
     .attr("stroke", "#fff")
     .attr("stroke-width", 1.5)
     .selectAll("circle");
+
+let zoom = d3.zoom()
+    .on("zoom", zoomed);
+
+
+svg.call(zoom);
+
+// Stores transform state, useful for applying zoom/pan to newly added elements.
+var t;
+
+function zoomed({ transform }) {
+    t = transform;
+    link.attr("transform", transform);
+    node.attr("transform", transform);
+}
 
 restart();
 
@@ -68,19 +83,18 @@ function merge_data(data) {
 }
 
 function update_graph() {
-
-    // Apply the general update pattern to the nodes.
+    // Apply the general update pattern to the nodes including zoom/pan.
     node = node.data(nodes, d => d.id).join(
         enter => enter.append("circle").attr("fill", d => {
             if (d.is_bootnode) { return "red" } else { return "green" }
-        }).attr("r", 5),
+        }).attr("r", 5).attr("transform", t),
         update => update,
         exit => exit.remove()
     );
 
     link = link.data(links, d => d.source.id + "-" + d.target.id).join(
         enter => enter.append("line")
-        .attr("stroke-width", .8),
+        .attr("stroke-width", .8).attr("transform", t),
         update => update,
         exit => exit.remove()
     );

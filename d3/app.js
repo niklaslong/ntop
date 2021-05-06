@@ -92,6 +92,8 @@ function update_graph() {
         exit => exit.remove()
     );
 
+    node.append("title").text(function(d) { return d.id })
+
     link = link.data(links, d => d.source.id + "-" + d.target.id).join(
         enter => enter.append("line")
         .attr("stroke-width", .8).attr("transform", t),

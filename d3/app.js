@@ -43,20 +43,37 @@ restart();
 function restart() {
     d3.timeout(function() {
 
-        postData('http://localhost:3030', { "jsonrpc": "2.0", "method": "graph", "id": 123 })
+        postData('http://localhost:3030', { "jsonrpc": "2.0", "method": "getnetworkgraph", "id": 123 })
             .then(data => {
-                console.log(JSON.stringify(data));
+                // console.log(JSON.stringify(data));
                 merge_data(data);
                 update_graph();
                 restart();
             });
-    }, 100);
+    }, 3000);
 }
 
 function merge_data(data) {
 
-    var added_nodes = data["result"]["added_vertices"];
-    var removed_nodes = data["result"]["removed_vertices"];
+    var vertices = data["result"]["vertices"];
+    var edges = data["result"]["edges"];
+
+    // Calculate the diffs.
+    let added_nodes = vertices.filter(x => {
+        return !nodes.some(node => node.id == x.id)
+    });
+    let removed_nodes = nodes.filter(x => {
+        return !vertices.some(node => node.id == x.id)
+    });
+
+    // console.log(added_nodes.length);
+
+    let added_links = edges.filter(x => {
+        return !links.some(link => link.source == x.source && link.target == x.target)
+    });
+    let removed_links = links.filter(x => {
+        return !edges.some(link => link.source == x.source && link.target == x.target)
+    });
 
     removed_nodes.forEach(removed_node => {
         const isRemoved = (node) => node.id == removed_node.id;
@@ -67,9 +84,6 @@ function merge_data(data) {
     added_nodes.forEach(added_node => {
         nodes.push(added_node)
     });
-
-    var added_links = data["result"]["added_edges"];
-    var removed_links = data["result"]["removed_edges"];
 
     removed_links.forEach(removed_link => {
         const isRemoved = (link) => link.source.id == removed_link.source && link.target.id == removed_link.target;
@@ -86,7 +100,7 @@ function update_graph() {
     // Apply the general update pattern to the nodes including zoom/pan.
     node = node.data(nodes, d => d.id).join(
         enter => enter.append("circle").attr("fill", d => {
-            if (d.is_bootnode) { return "red" } else { return "green" }
+            if (d.is_bootnode) { return "red" }
         }).attr("r", 5).attr("transform", t),
         update => update,
         exit => exit.remove()

@@ -58,12 +58,15 @@ function merge_data(data) {
     var vertices = data["result"]["vertices"];
     var edges = data["result"]["edges"];
 
+    console.log(vertices.length);
+    console.log(edges.length);
+
     // Calculate the diffs.
     let added_nodes = vertices.filter(x => {
-        return !nodes.some(node => node.id == x.id)
+        return !nodes.some(node => node.addr == x.addr)
     });
     let removed_nodes = nodes.filter(x => {
-        return !vertices.some(node => node.id == x.id)
+        return !vertices.some(node => node.addr == x.addr)
     });
 
     // console.log(added_nodes.length);
@@ -76,7 +79,7 @@ function merge_data(data) {
     });
 
     removed_nodes.forEach(removed_node => {
-        const isRemoved = (node) => node.id == removed_node.id;
+        const isRemoved = (node) => node.addr == removed_node.addr;
         var i = nodes.findIndex(isRemoved);
         nodes.splice(i, 1);
     });
@@ -86,7 +89,7 @@ function merge_data(data) {
     });
 
     removed_links.forEach(removed_link => {
-        const isRemoved = (link) => link.source.id == removed_link.source && link.target.id == removed_link.target;
+        const isRemoved = (link) => link.source.addr == removed_link.source && link.target.addr == removed_link.target;
         var i = links.findIndex(isRemoved);
         links.splice(i, 1);
     });
@@ -98,7 +101,7 @@ function merge_data(data) {
 
 function update_graph() {
     // Apply the general update pattern to the nodes including zoom/pan.
-    node = node.data(nodes, d => d.id).join(
+    node = node.data(nodes, d => d.addr).join(
         enter => enter.append("circle").attr("fill", d => {
             if (d.is_bootnode) { return "red" }
         }).attr("r", 5).attr("transform", t),
@@ -106,9 +109,9 @@ function update_graph() {
         exit => exit.remove()
     );
 
-    node.append("title").text(function(d) { return d.id })
+    node.append("title").text(function(d) { return d.addr })
 
-    link = link.data(links, d => d.source.id + "-" + d.target.id).join(
+    link = link.data(links, d => d.source.addr + "-" + d.target.addr).join(
         enter => enter.append("line")
         .attr("stroke-width", .8).attr("transform", t),
         update => update,
@@ -117,7 +120,7 @@ function update_graph() {
 
     // Update and restart the simulation.
     simulation.nodes(nodes);
-    simulation.force("link", d3.forceLink(links).id(d => d.id).distance(50))
+    simulation.force("link", d3.forceLink(links).id(d => d.addr).distance(50))
         .force("charge", d3.forceManyBody().strength(-100))
         // .force("center", d3.forceCenter(width / 2, height / 2));
         .force("x", d3.forceX(width / 2).strength(.05))

@@ -22,23 +22,30 @@ async fn main() {
         is_miner: false,
         is_syncing: false,
     });
-    ntop::start_rpc_server(nodes.clone()).await;
+    // ntop::start_rpc_server(nodes.clone()).await;
 
     // Start crawl task.
     let nodes_clone = nodes.clone();
     tokio::spawn(async move {
         let mut count = 0;
         loop {
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             update_nodes(nodes_clone.clone()).await;
+
             count += 1;
             println!("Completed loop: {}", count);
+
+            let miner_count =
+                nodes
+                    .read()
+                    .iter()
+                    .fold(0, |acc, node| if node.is_miner { acc + 1 } else { acc });
+
+            println!("MINER COUNT: {}", miner_count);
+            println!("NODE COUNT: {}", nodes.read().len());
         }
-    });
-
-    tokio::time::sleep(std::time::Duration::from_secs(500)).await;
-
-    dbg!(nodes.read());
+    })
+    .await;
 }
 
 #[derive(Deserialize, Debug)]
@@ -126,8 +133,6 @@ async fn update_nodes(nodes: Arc<RwLock<Vec<Node>>>) {
                 Ok(res) => res.json::<NodeInfoResponse>().await.unwrap(),
             };
 
-            dbg!("MADE IT");
-
             let client = reqwest::Client::new();
             let peer_info_res = client
                 .post(format!("http://{}", rpc.clone()))
@@ -148,7 +153,7 @@ async fn update_nodes(nodes: Arc<RwLock<Vec<Node>>>) {
             // Update node info.
             let mut nodes_write = nodes_clone.write();
             nodes_write[i].is_miner = node_info.is_miner;
-            nodes_write[i].is_miner = node_info.is_syncing;
+            nodes_write[i].is_syncing = node_info.is_syncing;
             nodes_write[i].peers = peer_info.peers.clone();
 
             // Create and push new nodes based on the peer addresses.
